@@ -1,7 +1,7 @@
 import { isToolCallEventType, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-// bash `timeout` is in seconds. Enforce presence + an upper bound of 1 hour.
-const MAX_TIMEOUT_SECONDS = 60 * 60; // 3600
+// bash `timeout` is in seconds. Enforce presence + an upper bound of 2 hours.
+const MAX_TIMEOUT_SECONDS = 2 * 60 * 60; // 7200
 
 export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event) => {
@@ -21,15 +21,15 @@ export default function (pi: ExtensionAPI) {
         block: true,
         reason:
           "Every bash call must set an explicit positive `timeout` (in seconds). " +
-          `Re-issue the command with a timeout > 0 and <= ${MAX_TIMEOUT_SECONDS} (1 hour).`,
+          `Re-issue the command with a timeout > 0 and <= ${MAX_TIMEOUT_SECONDS} (2 hours).`,
       };
     }
 
-    // Enforce the upper bound of < 1 hour.
+    // Enforce the upper bound of 2 hours.
     if (timeout > MAX_TIMEOUT_SECONDS) {
       return {
         block: true,
-        reason: `bash \`timeout\` must be <= ${MAX_TIMEOUT_SECONDS} seconds (1 hour). You requested ${timeout}.`,
+        reason: `bash \`timeout\` must be <= ${MAX_TIMEOUT_SECONDS} seconds (2 hours). You requested ${timeout}.`,
       };
     }
   });
