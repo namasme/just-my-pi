@@ -1,0 +1,21 @@
+{
+  "name": "pi-session-report",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "bun run report-core.test.ts && bun run triage-core.test.ts && bun run triage-runtime.test.ts && bash setup-tracker.integration.test.sh",
+    "typecheck": "node tools/link-pi-types.mjs && tsc --noEmit -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.79.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

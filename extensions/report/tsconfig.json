@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "allowJs": false
+  },
+  "include": [
+    "report-core.ts",
+    "report-core.test.ts",
+    "triage-core.ts",
+    "triage-core.test.ts",
+    "triage-runtime.ts",
+    "triage-runtime.test.ts",
+    "index.ts"
+  ],
+  "exclude": ["node_modules"]
+}
