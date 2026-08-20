@@ -1,5 +1,6 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+.pi-subagents/
 skills/cow-worktree/tests/_scratch/
 skills/cow-worktree/tests/_dmg/
