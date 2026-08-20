@@ -16,9 +16,10 @@ Design summary (see README.md for the full rationale):
   2. Resolve TARGET within SEED's repository; refuse if it is a branch
      already checked out in another worktree, or if its tree contains a
      submodule/gitlink anywhere.
-  3. Validate DEST: must not exist at all (not even as an empty directory),
-     and must not exist yet on a different filesystem/device than SEED
-     (`clonefile(2)` and `git worktree move` both require the same device).
+  3. Resolve a relative DEST beneath SEED's parent, then validate it: the
+     path must not exist at all (not even as an empty directory) and must
+     be on the same filesystem/device as SEED (`clonefile(2)` and
+     `git worktree move` both require the same device).
   4. If SEED is a partial/promisor (blobless) clone, materialize every blob
      object the TARGET tree needs relative to SEED's tree in a dedicated
      network preflight step, strictly before any worktree
@@ -521,11 +522,17 @@ def check_branch_not_checked_out_elsewhere(seed: SeedInfo, branch_ref: str) -> N
             )
 
 
-def validate_dest(dest: str) -> str:
+def validate_dest(seed: SeedInfo, dest: str) -> str:
     LOG.step(f"Validating destination: {dest}")
     expanded = os.path.expanduser(dest)
-    dest_abs = expanded if os.path.isabs(expanded) else os.path.join(os.getcwd(), expanded)
+    dest_abs = (
+        expanded
+        if os.path.isabs(expanded)
+        else os.path.join(os.path.dirname(seed.path), expanded)
+    )
     dest_abs = os.path.normpath(dest_abs)
+    if not os.path.isabs(expanded):
+        LOG.info(f"relative destination resolved beside seed: {dest_abs}")
 
     # Policy: destination must not exist at all -- not even as an empty
     # directory. `git worktree move` treats an *existing* destination
@@ -1364,7 +1371,7 @@ def _test_fail_stage(plan: Plan) -> Optional[str]:
 def build_plan(seed_path: str, target: str, dest: str, enable_test_hooks: bool = False) -> Plan:
     seed = validate_seed(seed_path)
     target_info = resolve_target(seed, target)
-    dest_abs = validate_dest(dest)
+    dest_abs = validate_dest(seed, dest)
     validate_same_device(seed, dest_abs)
     return Plan(
         seed=seed, target=target_info, dest=dest_abs, test_hooks_enabled=enable_test_hooks
@@ -1508,7 +1515,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     p.add_argument("--seed", required=True, help="path to a clean, full, non-sparse seed worktree")
     p.add_argument("--target", required=True, help="branch name or commit to check out at DEST")
-    p.add_argument("--dest", required=True, help="destination path (must not exist yet)")
+    p.add_argument(
+        "--dest",
+        required=True,
+        help="destination path; relative names resolve beneath the seed's parent",
+    )
     p.add_argument(
         "--dry-run",
         action="store_true",

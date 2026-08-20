@@ -79,6 +79,23 @@ class BaseCase(unittest.TestCase):
         self.addCleanup(rmtree_scratch, self.root)
 
 
+class TestDestinationResolution(BaseCase):
+    def test_relative_destination_resolves_beside_seed(self):
+        repo = build_base_repo(self.root)
+        elsewhere = os.path.join(self.root, "unrelated-cwd")
+        os.makedirs(elsewhere)
+
+        previous_cwd = os.getcwd()
+        try:
+            os.chdir(elsewhere)
+            plan = COW.build_plan(repo, head_sha(repo), "relative-dest")
+        finally:
+            os.chdir(previous_cwd)
+
+        self.assertEqual(plan.dest, os.path.join(self.root, "relative-dest"))
+        self.assertNotEqual(plan.dest, os.path.join(elsewhere, "relative-dest"))
+
+
 class TestSameCommit(BaseCase):
     def test_same_commit_seed_and_target(self):
         # Target is the seed's own HEAD commit, passed as a raw sha (a

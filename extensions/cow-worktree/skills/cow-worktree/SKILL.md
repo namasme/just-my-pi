@@ -14,11 +14,11 @@ Create one worktree with the bundled defensive `clonefile(2)` wrapper. Treat the
 Accept these values from the command arguments or ask for any value that cannot be inferred:
 
 - **Target:** a local branch, commit, or GitHub pull-request URL.
-- **Destination:** an absolute path or a name beneath the seed's parent directory.
+- **Destination:** an absolute path or a name. The wrapper resolves a name beneath the seed's parent directory, never against the current directory.
 - **Seed:** defaults to `~/src/pristine-monorepo` for the monorepo work.
 - **Branch:** defaults to the destination basename when the target is a pull request.
 
-Resolve every path to an absolute path. The destination's parent must exist. The destination itself must not exist in any form.
+Resolve the seed to an absolute path. You may pass a destination name directly; the wrapper anchors it beneath the seed's parent. The destination's parent must exist. The destination itself must not exist in any form.
 
 ## Procedure
 

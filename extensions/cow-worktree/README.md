@@ -6,11 +6,14 @@ The package keeps the worktree creator, its safety notes, and its synthetic test
 
 ## Install
 
+Keep this repository as the source of truth. Link the skill into Pi's global skill directory:
+
 ```bash
-pi install ~/pi/extensions/cow-worktree
+ln -s ~/pi/extensions/cow-worktree/skills/cow-worktree \
+  ~/.pi/agent/skills/cow-worktree
 ```
 
-Reload a running Pi session after installation:
+Pi reads the skill and its bundled script through that symlink. Reload a running Pi session after installation:
 
 ```text
 /reload
