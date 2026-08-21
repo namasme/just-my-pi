@@ -37,7 +37,7 @@ The default the monorepo seed is `~/src/pristine-monorepo`. Pass a different see
 
 ```bash
 cd skills/cow-worktree
-python3 -m py_compile bin/cow_worktree.py tests/*.py bench/benchmark.py
+python3 -m py_compile bin/cow_worktree.py bin/cow_worktree_core/*.py tests/*.py bench/benchmark.py
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
