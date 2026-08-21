@@ -15,7 +15,7 @@ Accept these values from the command arguments or ask for any value that cannot 
 
 - **Target:** a local branch, commit, or GitHub pull-request URL.
 - **Destination:** an absolute path or a name. The wrapper resolves a name beneath the seed's parent directory, never against the current directory.
-- **Seed:** defaults to `~/src/pristine-monorepo` for the monorepo work.
+- **Seed:** defaults to `~/src/pristine-monorepo`. Pass `--seed` to override.
 - **Branch:** defaults to the destination basename when the target is a pull request.
 
 Resolve the seed to an absolute path. You may pass a destination name directly; the wrapper anchors it beneath the seed's parent. The destination's parent must exist. The destination itself must not exist in any form.

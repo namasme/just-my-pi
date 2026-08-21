@@ -5,7 +5,7 @@ Run with:
     python3 tests/test_cow_worktree.py -v
 
 Everything happens under tests/_scratch/ inside the disposable lab dir.
-Never touches the real the monorepo checkouts (helpers.py enforces this).
+Never touches real monorepo checkouts (helpers.py enforces this).
 """
 import errno
 import importlib.util

@@ -4,10 +4,10 @@
 `tests/test_cow_worktree.py::test_cross_device_destination_rejected_when_simulated`
 documents that the *real* cross-device check is exercised here, against
 `tests/_dmg/crossdev.dmg` -- a small, disposable APFS disk image checked
-into the lab purely as test fixture data (it contains no the monorepo content).
+into the lab purely as test fixture data (it contains no monorepo content).
 
 This mounts that image at a path *inside* the lab's `tests/_scratch`
-directory (never under the real the monorepo/pristine-monorepo checkouts),
+directory (never under real monorepo checkouts),
 then exercises `validate_same_device()` from both directions:
 
   * seed on the main volume, dest on the image

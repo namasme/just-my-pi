@@ -1,7 +1,7 @@
 """Direct `clonefile(2)` binding via ctypes.
 
 A `/bin/cp -c` subprocess per path would be prohibitively expensive at
-the monorepo's ~370k-file scale, so this calls into libSystem directly. There
+a large monorepo's ~370k-file scale, so this calls into libSystem directly. There
 is intentionally no byte-copy fallback: if clonefile is unavailable or the
 volume can't clone, creation fails closed (see references/design.md,
 "Limitations")."""

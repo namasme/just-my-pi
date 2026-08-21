@@ -1,0 +1,19 @@
+{
+  "name": "pi-extensions",
+  "version": "0.1.0",
+  "description": "Personal pi extensions, skills, and subagent definitions.",
+  "license": "MIT",
+  "author": "Nacho Mas <ignaciomasmesa@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/namasme/pi-extensions"
+  },
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./extensions/require-bash-timeout/index.ts"],
+    "skills": ["./extensions/cow-worktree/skills"],
+    "subagents": {
+      "agents": ["./agents"]
+    }
+  }
+}

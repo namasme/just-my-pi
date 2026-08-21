@@ -98,7 +98,7 @@ def git(
 #   * core.checkStat=default -- `minimal` compares fewer stat fields
 #     (including ctime); force the full comparison.
 # This does not replace a full content re-hash of every tracked file --
-# that would cost a second full read pass at the monorepo scale purely to
+# that would cost a second full read pass at monorepo scale purely to
 # duplicate what Git's own stat-then-hash logic already does once these
 # three settings are forced conservative.
 _VERIFY_GIT_CONFIG_ARGS = [

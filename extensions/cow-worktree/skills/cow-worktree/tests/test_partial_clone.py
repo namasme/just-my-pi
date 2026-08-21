@@ -26,7 +26,7 @@ Two scenarios:
 Skips itself (rather than failing) if the local git/platform cannot
 produce a genuine partial clone this way (e.g. an old git without
 `--filter`/`uploadpack.allowfilter` support). See README's "Limitations"
-for how this fixture differs from a real the monorepo/pristine-monorepo
+for how this fixture differs from a real monorepo/pristine-monorepo
 partial clone (single small repo, local `file://` origin forced through
 the smart-protocol path, no real network latency or auth).
 """

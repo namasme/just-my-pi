@@ -31,7 +31,7 @@ Example:
 /skill:cow-worktree https://github.com/example-org/monorepo/pull/1234 review-pr-1234
 ```
 
-The default the monorepo seed is `~/src/pristine-monorepo`. Pass a different seed explicitly when needed.
+The default seed is `~/src/pristine-monorepo`. Pass a different seed explicitly when needed.
 
 ## Test
 

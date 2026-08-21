@@ -9,15 +9,12 @@ LAB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRATCH_ROOT = os.path.join(LAB_DIR, "tests", "_scratch")
 WRAPPER = os.path.join(LAB_DIR, "bin", "cow_worktree.py")
 
-# Guard rails: never let tests touch the real the monorepo checkouts.
-FORBIDDEN_SUBSTRINGS = ("example-org/monorepo", "example-org/pristine-monorepo")
+# Guard rail: tests may only ever touch paths inside this lab directory.
+# realpath() resolves symlinks first, so escapes are caught here.
 
 
 def _guard(path: str) -> None:
     real = os.path.realpath(path)
-    for bad in FORBIDDEN_SUBSTRINGS:
-        if bad in real:
-            raise RuntimeError(f"refusing to touch forbidden path: {real}")
     if not real.startswith(LAB_DIR):
         raise RuntimeError(f"refusing to touch path outside lab: {real}")
 

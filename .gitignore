@@ -1,0 +1,15 @@
+# Agent run artifacts. These capture full session transcripts and must never
+# be committed.
+.pi-subagents/
+.state/
+
+# Build and runtime
+node_modules/
+__pycache__/
+*.py[cod]
+
+# Test scratch space
+**/tests/_scratch/
+**/tests/_dmg/
+
+.DS_Store
