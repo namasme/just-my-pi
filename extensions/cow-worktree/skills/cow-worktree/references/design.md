@@ -15,25 +15,16 @@ successfully created linked worktrees from the real blobless
 below in force; successful pilots do not remove the residual race and
 interruption risks.
 
-This revision reflects **two hardening passes**. A first read-only
-critic sent this back `BLOCK` pending six specific hardening areas
-(cleanup ownership/symlink races, target-introduced gitlink rejection,
-safe partial/promisor-clone support, content-verification/seed-mutation
-races, ambient Git environment poisoning, and destination TOCTOU); all
-six were implemented and tested, see "Hardening: six areas" below. A
-*second*, independent critic then reviewed the result and returned
-**GO, with four remaining conditions**: (1) test-only fault-injection
-hooks were reachable via ambient environment variables alone in a
-production run; (2) the reserved temp path's identity was not
-re-verified immediately before *every* individual mutating step, only at
-coarser checkpoints; (3) seed-mutation detection could in principle be
-weakened by ambient Git config (fsmonitor/trustctime/checkStat); and (4)
-a small check-to-move window at the very end could still race with a
-concurrently created destination. All four are now resolved; see
-"Second critic review: four conditions" below for exactly how, and for
-the one residual, explicitly bounded and documented threat that is not
-(and, without a kernel-level atomic primitive `git worktree move` doesn't
-expose, cannot be) eliminated outright.
+The design addresses six areas of defensive hardening (cleanup
+ownership/symlink races, target-introduced gitlink rejection, safe
+partial/promisor-clone support, content-verification/seed-mutation
+races, ambient Git environment poisoning, and destination TOCTOU); see
+"Safety mechanisms" below for the mechanism behind each. One residual
+risk -- a small check-to-move window at the very end that could race
+with a concurrently created destination -- is explicitly bounded,
+detected, and documented rather than eliminated outright, since doing so
+would require a kernel-level atomic primitive `git worktree move`
+doesn't expose; see "Limitations" below.
 
 ## Requirements
 
@@ -90,7 +81,7 @@ python3 bin/cow_worktree.py --seed SEED_WORKTREE --target TARGET --dest DEST [--
   symlink, nor an existing (even empty) directory. Its parent directory
   must already exist (the wrapper never creates ancestor directories).
   It must resolve to the same filesystem/device as `--seed`.
-  See "Hardening: six areas" #6 for why an empty directory is rejected
+  See "Safety mechanisms" #6 for why an empty directory is rejected
   too, not just tolerated.
 - `--dry-run`: validate everything and print the plan (including a
   `git diff --stat` between the seed and target trees, and a report of how
@@ -131,7 +122,7 @@ target tree.
    seed).
 4. **Resolve and validate the destination.** Anchor a relative destination
    beneath the seed's parent directory. The resolved path must not exist in
-   any form (see "Hardening" #6), must have an existing parent, and must
+   any form (see "Safety mechanisms" #6), must have an existing parent, and must
    share a filesystem device with the seed (a same-device requirement
    `clonefile(2)` and
    `git worktree move` both share).
@@ -150,8 +141,7 @@ target tree.
    `verify_reservation_intact()` re-checks via `lstat` immediately before
    *every single one* of the remaining steps below that touches the
    reserved path -- not just at a few coarse checkpoints -- before doing
-   anything destructive or before any registration lookup; see
-   "Second critic review" #2. An `O_EXCL` sidecar file recording a random
+   anything destructive or before any registration lookup. An `O_EXCL` sidecar file recording a random
    per-run token is also written as a second, independent, filename-based
    ownership proof usable even in the narrow window before Git's own
    private-gitdir marker exists.
@@ -179,8 +169,7 @@ target tree.
 10. **Re-verify identity, then refresh the index stat cache**:
     `git update-index --refresh`, mandatory and checked, and forced onto
     conservative Git config (`core.fsmonitor=false`,
-    `core.trustctime=true`, `core.checkStat=default`; see "Second critic
-    review" #3) -- `read-tree` leaves zeroed stat data, and this both
+    `core.trustctime=true`, `core.checkStat=default`) -- `read-tree` leaves zeroed stat data, and this both
     fixes that up and fails the run if Git finds the freshly-copied files
     don't match what it expected.
 11. **Re-verify identity, then transform `S` -> `T`**:
@@ -203,8 +192,7 @@ target tree.
     not a subdirectory of it -- which is how a foreign directory raced
     into existence in the narrow window between the pre-move check and
     the `git worktree move` call itself is detected explicitly rather
-    than relying on an incidental later failure; see "Second critic
-    review" #4. Then the full verification (worktree state +
+    than relying on an incidental later failure. Then the full verification (worktree state +
     seed-unmodified) is re-run from `DEST` (paranoia -- the state must
     still hold after Git updates its administrative files).
 14. **Finalize**: remove the private marker and the `O_EXCL` sidecar. Any
@@ -214,10 +202,10 @@ target tree.
     worktrees/paths (including a raced symlink or a concurrently-created
     `DEST`) are never touched.
 
-## Hardening: six areas
+## Safety mechanisms
 
-Each area below was a specific `BLOCK` finding from a prior read-only
-critic review. All six are implemented across `bin/cow_worktree_core/`
+The following six areas describe the defensive mechanisms built into the
+design. All six are implemented across `bin/cow_worktree_core/`
 (see "Module layout" above) and each has at least one dedicated automated
 test.
 
@@ -371,184 +359,10 @@ test.
   foreign directory survives untouched and empty, and no wrapper temp
   path or extra worktree registration is left behind).
 
-## Second critic review: four conditions
-
-A second, independent read-only critic reviewed the six-area hardening
-pass above and returned **GO, with four remaining conditions**, all now
-resolved in `bin/cow_worktree_core/`, each with dedicated tests.
-
-### 1. Test-only hooks must require an explicit flag, not just an env var
-
-- **Problem**: every `COW_WORKTREE_TEST_*` fault-injection/adversarial
-  hook (symlink-alias attacks, seed mutation, forced failures at specific
-  stages, destination races) was gated only on its own environment
-  variable being set -- so an ambient environment variable, inherited by
-  accident (e.g. leaked from a parent shell or CI job), could silently
-  change a *production* run's behavior.
-- **Fix**: `Plan.test_hooks_enabled` (default `False`) gates every single
-  hook in `cow_worktree_core/test_hooks.py` -- each hook function's very
-  first line is
-  `if not enabled: return` (or the plan-level equivalent), so no
-  `COW_WORKTREE_TEST_*` variable is even *read* unless this is `True`.
-  It is only ever set `True` via a hidden, non-default, `argparse.SUPPRESS`-hidden
-  CLI flag (`main()`/`parse_args()`) that is deliberately not spelled out
-  in the script's `--help`-visible module docstring or in `--help`
-  output itself -- see `tests/test_cow_worktree.py`'s
-  `TestTestHooksDisabledByDefault::test_enable_test_hooks_flag_is_hidden_from_help`.
-  This is test infrastructure only, not a supported end-user feature; see
-  [the hardening report](hardening-report.md) for its review history and
-  `tests/helpers.py::run_wrapper()`'s `enable_test_hooks`
-  parameter (only ever `True` in tests that actually inject a fault).
-- Test: `tests/test_cow_worktree.py::TestTestHooksDisabledByDefault`.
-  `test_ambient_hook_env_vars_alone_are_completely_inert` sets **every**
-  hook's environment variable simultaneously (symlink-alias attack
-  targeting a real established victim worktree, forced mid-run failure,
-  seed mutation, and both destination-race variables) *without* the
-  hidden flag, and asserts the run succeeds completely normally: the
-  correct `DEST` is produced, the seed and the victim worktree are both
-  completely unaffected and still registered, and no hook-induced
-  failure or side effect occurs anywhere.
-
-### 2. Re-verify reserved-path identity before *every* mutating step, not just at checkpoints
-
-- **Problem**: the first hardening pass's `verify_reservation_intact()`
-  calls were concentrated at a few coarse checkpoints (registration,
-  marker capture, the final move), leaving a window where a race that
-  won *between* two specific later steps (e.g. between index
-  initialization and the CoW copy) would not be caught until the next
-  checkpoint, if at all.
-- **Fix**: `execute_plan()` now calls `verify_reservation_intact()`
-  immediately before *every* individual step that touches the reserved
-  path: before and after `add_worktree()`, before private-gitdir
-  capture, before the private marker write, before index
-  initialization, before the CoW copy, before the index refresh, before
-  the `read-tree` transform, before worktree verification, and before the
-  final move -- see the Algorithm section's steps 6-13 above for exactly
-  where each one sits in the pipeline. `cleanup_owned()` independently
-  re-does its own `lstat` identity check immediately before every
-  destructive command it might issue (both the `git worktree remove
-  --force` call and the final `shutil.rmtree`), never relying on an
-  identity check done earlier in the run.
-- A second, *later* adversarial hook
-  (`_maybe_inject_symlink_attack_post_marker` /
-  `COW_WORKTREE_TEST_SYMLINK_ATTACK_POST_MARKER_TARGET`) simulates a race
-  that only wins *after* `git worktree add` and the private marker
-  already exist (i.e. after the original `TestSymlinkAliasAttack`
-  window has already closed), replacing the reserved directory with a
-  symlink to an established victim worktree at that later point instead.
-- Test:
-  `tests/test_cow_worktree.py::TestSymlinkAliasAttackPostMarker::test_temp_path_symlink_to_victim_after_marker_is_never_touched`
-  asserts the run fails loudly (`SECURITY`, naming the exact
-  "index initialization" step at which it was caught), and that the
-  victim's `HEAD`, index/files, and worktree registration are all
-  completely unchanged afterward -- proving the per-step re-checks catch
-  a post-registration race, not just a pre-registration one.
-
-### 3. Seed-mutation verification must not depend on ambient Git config
-
-- **Problem**: a plain `git diff --quiet` can be made to falsely report
-  "clean" by ambient configuration the wrapper does not control: a
-  malicious/stale `core.fsmonitor` hook that always claims nothing
-  changed, `core.trustctime=false` (common, if misguided, NFS advice),
-  or `core.checkStat=minimal` (checks fewer stat fields) all weaken the
-  check without touching the wrapper's own code or command line.
-- **Fix**: `git_verify()` wraps every security-relevant
-  cleanliness/mutation/identity check (`verify_seed_unmodified()`,
-  `validate_seed()`'s dirty/untracked checks, `refresh_index()`,
-  `verify_worktree()`'s clean-status check) with `-c` command-line config
-  overrides -- `core.fsmonitor=false`, `core.trustctime=true`,
-  `core.checkStat=default` -- applied via `_VERIFY_GIT_CONFIG_ARGS`. `-c`
-  on the command line has the highest precedence of any Git config
-  source, higher than repository/global/system config files *and*
-  higher than `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*`
-  environment-variable config (which `sanitized_git_env()` deliberately
-  does *not* strip, since that mechanism is also legitimately used for
-  partial-clone/auth configuration) -- so no combination of ambient
-  config, files or environment, can weaken these specific three settings
-  for these specific checks.
-- This does **not** replace `git diff --quiet`/`git update-index
-  --refresh` with an independent full-content re-hash of every tracked
-  path read a second time in userspace -- that would mean paying the
-  cost of a second full read pass over every tracked file's bytes, at
-  the monorepo scale, purely to duplicate what Git's own stat-then-hash-on-
-  ambiguity logic already does once these three settings are forced
-  conservative. Forcing them is the strongest correct Git-native content
-  check achievable here without that additional full-content-read cost;
-  see `cow_worktree_core/gitenv.py`'s `_VERIFY_GIT_CONFIG_ARGS` comment
-  for the full per-setting rationale.
-- Test:
-  `tests/test_cow_worktree.py::TestSeedMutationDuringRun` now has, in
-  addition to the original same-size/same-mtime mutation-injection tests
-  (`test_seed_mutated_before_copy_is_detected`,
-  `test_seed_mutated_before_move_is_detected`), two hostile-config
-  variants
-  (`test_seed_mutated_before_copy_is_detected_despite_poisoned_verification_config`,
-  `test_seed_mutated_before_move_is_detected_despite_poisoned_verification_config`)
-  that additionally poison `core.fsmonitor` (to `/usr/bin/true`, an
-  always-"clean" hook), `core.trustctime` (to `false`), and
-  `core.checkStat` (to `minimal`) via `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/
-  `GIT_CONFIG_VALUE_*` before running the same same-size/same-mtime
-  mutation, and assert the mutation is still detected and the run still
-  fails safely despite that poisoning.
-
-### 4. The final destination check-to-move window
-
-- **Problem**: `move_worktree()` checks `DEST` does not exist immediately
-  before calling `git worktree move`, but a pathname-based filesystem
-  check followed by a pathname-based subprocess call cannot be made
-  atomic with each other from Python without a kernel primitive `git
-  worktree move` itself does not expose -- so a vanishingly small window
-  remains in which a concurrent process could still create `DEST`
-  (empty or with real content) between the check and the actual move.
-- **What was verified, empirically, about what happens if that window is
-  hit**: `git worktree move` treats an *existing* destination directory
-  as a place to move **into**, not as an error -- confirmed by hand
-  against the real `git worktree move` (git 2.54) before writing any
-  test or fix: moving a temporary worktree onto a pre-existing directory
-  containing a foreign file exits `0` and leaves the temporary worktree
-  nested one level deeper (`DEST/<tmp-name>/...`), with the pre-existing
-  foreign file completely untouched alongside it.
-- **Fix (detect-and-fail-safe, not eliminate)**: `move_worktree()` now
-  explicitly re-reads git's own trusted private-gitdir record
-  immediately after the move and confirms it points at `DEST`
-  *exactly*, not a subdirectory of it. If the race was hit, this fails
-  loudly and explicitly ("destination was raced into existence during
-  the final move...") instead of silently succeeding or failing later
-  for an unrelated, confusing reason. `execute_plan()`'s failure-cleanup
-  path then uses that same trusted record (not the original `tmp_path`)
-  to identify and remove *only* the nested worktree this run created,
-  leaving the foreign directory and its content completely untouched.
-- **This race is bounded and non-destructive, not eliminated.** It can
-  only ever make the run fail loudly with the foreign content preserved
-  -- it cannot delete, empty, or overwrite anything that was already at
-  `DEST`, and it cannot cause a wrong `DEST` to be reported as
-  successful (the private-gitdir re-check catches that explicitly). It
-  is not eliminated outright because doing so would require `DEST`'s
-  parent directory to itself be a private, not-concurrently-writable
-  location for the duration of a run -- **a real pilot must use such a
-  private parent directory** to close this window completely; this
-  wrapper alone cannot guarantee that a shared/world-writable parent
-  directory is race-free.
-- Test:
-  `tests/test_cow_worktree.py::TestDestinationTOCTOU::test_check_to_move_race_preserves_foreign_content`
-  injects real foreign file content into `DEST` strictly inside
-  `move_worktree()`'s own check-to-move window (via a dedicated test-only
-  hook placed exactly there, `_maybe_create_dest_with_content_race_for_test`
-  / `COW_WORKTREE_TEST_CREATE_DEST_WITH_CONTENT_DURING_MOVE` -- distinct
-  from the coarser, pre-existing
-  `test_concurrently_created_destination_fails_safely_without_removal`,
-  which creates `DEST` *before* `move_worktree()` is even called and is
-  therefore caught by its own leading `os.path.lexists` check without
-  ever invoking `git` at all) and asserts: the run fails with the new,
-  explicit error message; the foreign file's exact byte content survives
-  unchanged; the nested worktree this run created is fully cleaned up
-  (nothing else left inside `DEST`); and exactly the original primary
-  worktree remains registered afterward.
-
 ## Environment sanitization policy (summary)
 
 Every `git` subprocess this wrapper runs has the variables listed in
-"Hardening" #5 stripped from its environment first (`sanitized_git_env()`
+"Safety mechanisms" #5 stripped from its environment first (`sanitized_git_env()`
 in `cow_worktree_core/gitenv.py`), specifically so that no combination of ambient
 `GIT_*` environment variables can redirect any command this wrapper
 issues at a different repository, index, or object store than the exact,
@@ -563,7 +377,7 @@ The seed may be a partial/promisor (blobless) clone. Before any worktree
 registration or mutation, the wrapper materializes every blob the target
 tree needs beyond what the seed's tree already has, and strictly
 re-verifies local availability with lazy fetching disabled. See
-"Hardening" #3 above for the mechanism and `tests/test_partial_clone.py`
+"Safety mechanisms" #3 above for the mechanism and `tests/test_partial_clone.py`
 for the integration test.
 
 **How the automated test fixture differs from a real
@@ -594,10 +408,10 @@ monorepo/pristine-monorepo partial clone:**
 - The seed worktree is **never modified**. It is only read from (`git
   ls-files`, `clonefile` as the *source*, various read-only `git`
   inspection commands), and is explicitly re-verified unmodified at
-  multiple points during the run (see "Hardening" #4).
+  multiple points during the run (see "Safety mechanisms" #4).
 - Existing worktrees other than the one this run creates are **never**
   removed, moved, or reset -- including one aliased via a raced symlink
-  (see "Hardening" #1).
+  (see "Safety mechanisms" #1).
 - No `git reset --hard` and no `git clean` are used anywhere. All working
   tree state changes are explicit (`git read-tree ... -u`), confined to
   the wrapper's own temporary worktree.
@@ -613,7 +427,7 @@ monorepo/pristine-monorepo partial clone:**
   immediately before the final move; a concurrently-created `DEST` is
   left completely untouched.
 - Every `git` subprocess runs with dangerous repository-redirection
-  environment variables stripped (see "Hardening" #5).
+  environment variables stripped (see "Safety mechanisms" #5).
 
 ## Tests
 
@@ -654,15 +468,12 @@ COW_BENCH_FILES=50000 COW_BENCH_FILE_SIZE=1024 python3 bench/benchmark.py
 Creates a synthetic seed repo under `tests/_scratch/benchmark`, times an
 ordinary `git worktree add --detach` versus the wrapper creating a second
 worktree at the same commit, and removes the scratch data again when done
-(set `COW_BENCH_KEEP=1` to keep it for inspection). See the
-[hardening report](hardening-report.md) for recorded results and their
-caveats -- in particular, `du` reports *logical* size and double-counts
-extents shared between the two trees, so it is not evidence of storage
-savings, and APFS free-space deltas on a live volume are noisy enough
-(delayed reclamation) to sometimes go negative for the CoW run. Treat the
-timing numbers as illustrative, single-sample measurements, not a rigorous
-benchmark. The final hardening pass did not rerun the benchmark because it
-did not change the hot copy path.
+(set `COW_BENCH_KEEP=1` to keep it for inspection). `du` reports
+*logical* size and double-counts extents shared between the two trees,
+so it is not evidence of storage savings, and APFS free-space deltas on
+a live volume are noisy enough (delayed reclamation) to sometimes go
+negative for the CoW run. Treat the timing numbers as illustrative,
+single-sample measurements, not a rigorous benchmark.
 
 ## Limitations
 
@@ -699,24 +510,22 @@ did not change the hot copy path.
 - **Races are detected and failed safely at every step, not eliminated,
   and DEST's parent directory must be private for a real pilot.** Every
   mutating step's reserved-path identity is re-checked immediately
-  before it runs (see "Second critic review" #2), and seed content
-  mutation / destination recreation are hard failures with cleanup, not
-  silently ignored -- but a race that wins in one of these specific,
-  narrow windows is *detected and failed safely*, not prevented from
-  occurring in the first place. Two specific, deliberately not-eliminated
-  cases are documented in detail above: (a) a mutation that preserves a
+  before it runs, and seed content mutation / destination recreation are
+  hard failures with cleanup, not silently ignored -- but a race that
+  wins in one of these specific, narrow windows is *detected and failed
+  safely*, not prevented from occurring in the first place. Two specific,
+  deliberately not-eliminated cases: (a) a mutation that preserves a
   tracked seed file's exact size, mtime, *and* ctime simultaneously would
   not be caught by `verify_seed_unmodified()` (forging ctime requires
   controlling the system clock, out of scope for an unprivileged local
-  race; see "Second critic review" #3); and (b) the final
-  check-to-move window for `DEST` (see "Second critic review" #4) is
-  bounded and non-destructive -- it can only cause a loud, explicit
-  failure with foreign content preserved, never data loss or a
-  falsely-reported success -- but is not atomically eliminated, because
-  doing so would require a kernel primitive `git worktree move` does not
-  expose. **A real pilot must place `DEST` under a private (not
-  concurrently writable by any other process/user) parent directory** to
-  close that window completely; this wrapper alone cannot guarantee a
+  race); and (b) the final check-to-move window for `DEST` is bounded
+  and non-destructive -- it can only cause a loud, explicit failure with
+  foreign content preserved, never data loss or a falsely-reported
+  success -- but is not atomically eliminated, because doing so would
+  require a kernel primitive `git worktree move` does not expose. **A
+  real pilot must place `DEST` under a private (not concurrently
+  writable by any other process/user) parent directory** to close that
+  window completely; this wrapper alone cannot guarantee a
   shared/world-writable parent is race-free, and does not attempt to.
 - **A `SIGKILL` (or any signal Python cannot catch) mid-run will skip the
   `except`/cleanup path.** The `O_EXCL` sidecar and private marker still
@@ -724,8 +533,7 @@ did not change the hot copy path.
   temporary worktree, but this wrapper does not do that automatically on
   its own next invocation.
 - **Test-only fault-injection hooks exist in the shipped module** (gated
-  behind a hidden, non-default CLI flag -- see "Second critic review"
-  #1). They are inert in every normal invocation (proven by
+  behind a hidden, non-default CLI flag). They are inert in every normal invocation (proven by
   `TestTestHooksDisabledByDefault`), but their mere presence in the
   source is itself a residual: a reviewer of the code, not just its
   runtime behavior, must confirm the gating is intact rather than

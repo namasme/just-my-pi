@@ -412,7 +412,7 @@ class TestSymlinkAliasAttack(BaseCase):
 
 class TestSymlinkAliasAttackPostMarker(BaseCase):
     """Adversarial test for the *post-registration* mid-run path-replacement
-    window (second-critic-review conditional blocker #2): a race that only
+    window: a race that only
     wins *after* `git worktree add` and the private marker have already
     been created (i.e. after TestSymlinkAliasAttack's earlier window has
     already closed) must still be caught before any further mutating step
@@ -686,8 +686,8 @@ class TestDestinationTOCTOU(BaseCase):
         check-to-move window (between its `os.path.lexists` re-check and
         the `git worktree move` subprocess call itself), rather than
         before move_worktree() is even called. This is the genuine,
-        narrowest version of the check->move TOCTOU (second-critic-review
-        conditional blocker #4): proves that even when it wins, the
+        narrowest version of the check->move TOCTOU: proves that even
+        when it wins, the
         wrapper fails safely, the foreign directory's actual content
         (not just its existence) is provably preserved byte-for-byte,
         and the nested worktree this run created gets fully cleaned up
@@ -724,8 +724,8 @@ class TestDestinationTOCTOU(BaseCase):
 
 
 class TestTestHooksDisabledByDefault(BaseCase):
-    """Second-critic-review conditional blocker #1: every
-    `COW_WORKTREE_TEST_*` environment variable must be completely inert
+    """Every `COW_WORKTREE_TEST_*` environment variable must be
+    completely inert
     -- unable to mutate the seed, redirect/hijack the reserved temp path,
     create a destination race, or alter any other normal-run behavior --
     unless the hidden, non-default `--enable-test-hooks` CLI flag was

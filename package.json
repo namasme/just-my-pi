@@ -17,11 +17,6 @@
     ],
     "skills": [
       "./extensions/cow-worktree/skills"
-    ],
-    "subagents": {
-      "agents": [
-        "./agents"
-      ]
-    }
+    ]
   }
 }

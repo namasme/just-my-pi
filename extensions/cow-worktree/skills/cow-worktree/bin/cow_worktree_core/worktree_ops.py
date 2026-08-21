@@ -308,8 +308,8 @@ def move_worktree(
             "into an existing destination"
         )
 
-    # Bounded, non-eliminated race (see references/design.md, "Second
-    # critic review" #4): the window between the lexists check above and
+    # Bounded, non-eliminated race (see references/design.md,
+    # "Limitations"): the window between the lexists check above and
     # the `git worktree move` call below can't be made atomic from Python
     # without a kernel primitive `git worktree move` doesn't expose. This
     # is a detect-and-fail-safe, not an eliminate: the private-gitdir

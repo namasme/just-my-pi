@@ -6,14 +6,13 @@ The package keeps the worktree creator, its safety notes, and its synthetic test
 
 ## Install
 
-Keep this repository as the source of truth. Link the skill into Pi's global skill directory:
+This skill ships inside the `just-my-pi` package:
 
 ```bash
-ln -s ~/pi/extensions/cow-worktree/skills/cow-worktree \
-  ~/.pi/agent/skills/cow-worktree
+pi install git:git@github.com:namasme/just-my-pi@v0.1.0
 ```
 
-Pi reads the skill and its bundled script through that symlink. Reload a running Pi session after installation:
+Reload a running Pi session afterwards:
 
 ```text
 /reload
@@ -28,10 +27,10 @@ Pi reads the skill and its bundled script through that symlink. Reload a running
 Example:
 
 ```text
-/skill:cow-worktree https://github.com/example-org/monorepo/pull/1234 review-pr-1234
+/skill:cow-worktree https://github.com/example-org/example-repo/pull/1234 review-pr-1234
 ```
 
-The default seed is `~/src/pristine-monorepo`. Pass a different seed explicitly when needed.
+`--seed` is required and has no default: pass the path to a clean, full, non-sparse worktree to clone from.
 
 ## Test
 

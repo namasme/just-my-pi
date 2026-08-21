@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Bounded local integration test for the partial/promisor (blobless)
-seed-materialization preflight (invariant #3 from the hardening handoff).
+seed-materialization preflight.
 
 Builds a genuinely blobless local seed via `git clone --no-local
 --filter=blob:none file://<origin>` (see `fixtures.build_promisor_seed`'s

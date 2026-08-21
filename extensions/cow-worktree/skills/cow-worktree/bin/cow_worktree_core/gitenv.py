@@ -1,6 +1,7 @@
 """Subprocess helpers and environment/config sanitization for every `git`
-invocation this wrapper makes. See references/design.md, "Hardening" #5
-and "Second critic review" #3, for the full threat-model writeup."""
+invocation this wrapper makes. See references/design.md, "Safety
+mechanisms" #5, and the "Algorithm" section's step 10, for the full
+threat-model writeup."""
 from __future__ import annotations
 
 import os
