@@ -1,18 +1,20 @@
-# pi-extensions
+# just-my-pi
 
 Personal [pi](https://pi.dev) package: extensions, skills, and subagent definitions.
 
 ## Install
 
+This is a private repository, so the SSH form is used; pi picks up your configured keys automatically.
+
 ```bash
-pi install git:github.com/namasme/pi-extensions@v0.1.0
+pi install git:git@github.com:namasme/just-my-pi@v0.1.0
 ```
 
 Or reference it from `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "packages": ["git:github.com/namasme/pi-extensions@v0.1.0"]
+  "packages": ["git:git@github.com:namasme/just-my-pi@v0.1.0"]
 }
 ```
 
@@ -32,7 +34,7 @@ Load only part of the package with settings-level filtering. For example, on Lin
 {
   "packages": [
     {
-      "source": "git:github.com/namasme/pi-extensions@v0.1.0",
+      "source": "git:git@github.com:namasme/just-my-pi@v0.1.0",
       "skills": []
     }
   ]
