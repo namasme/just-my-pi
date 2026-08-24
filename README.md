@@ -4,17 +4,17 @@ Personal [pi](https://pi.dev) package: extensions and skills.
 
 ## Install
 
-This is a private repository, so the SSH form is used; pi picks up your configured keys automatically.
+The repository is public, so the HTTPS form needs no SSH agent or credentials.
 
 ```bash
-pi install git:git@github.com:namasme/just-my-pi@v0.1.0
+pi install git:github.com/namasme/just-my-pi@v0.3.0
 ```
 
 Or reference it from `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "packages": ["git:git@github.com:namasme/just-my-pi@v0.1.0"]
+  "packages": ["git:github.com/namasme/just-my-pi@v0.3.0"]
 }
 ```
 
@@ -23,6 +23,7 @@ Or reference it from `~/.pi/agent/settings.json`:
 | Resource | Type | Notes |
 |---|---|---|
 | `require-bash-timeout` | extension | Rejects `bash` tool calls that omit an explicit timeout, so no agent command can hang indefinitely |
+| `report` | extension | Deterministic session reports. `/report` records the session as a Beads ticket with no LLM involved; `/triage-report` investigates eligible open tickets. Output goes to `~/pi/reports`, never into this repository |
 | `cow-worktree` | skill | Creates APFS copy-on-write git worktrees, making branches of very large repositories cheap in time and disk. **macOS only** |
 
 ## Selective loading
@@ -33,7 +34,7 @@ Load only part of the package with settings-level filtering. For example, on Lin
 {
   "packages": [
     {
-      "source": "git:git@github.com:namasme/just-my-pi@v0.1.0",
+      "source": "git:github.com/namasme/just-my-pi@v0.3.0",
       "skills": []
     }
   ]
@@ -52,3 +53,4 @@ Tests only ever operate inside their own lab directory; `tests/helpers.py` resol
 ## License
 
 MIT
+

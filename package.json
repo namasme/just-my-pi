@@ -1,7 +1,7 @@
 {
   "name": "just-my-pi",
-  "version": "0.1.0",
-  "description": "Personal pi configuration: extensions, skills, and subagent definitions.",
+  "version": "0.3.0",
+  "description": "Personal pi configuration: pi extensions and skills.",
   "license": "MIT",
   "author": "Nacho Mas <ignaciomasmesa@gmail.com>",
   "repository": {
@@ -13,7 +13,8 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions/require-bash-timeout/index.ts"
+      "./extensions/require-bash-timeout/index.ts",
+      "./extensions/report/index.ts"
     ],
     "skills": [
       "./extensions/cow-worktree/skills"
