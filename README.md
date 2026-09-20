@@ -7,14 +7,17 @@ Personal [pi](https://pi.dev) package: extensions and skills.
 The repository is public, so the HTTPS form needs no SSH agent or credentials.
 
 ```bash
-pi install git:github.com/namasme/just-my-pi@v0.4.0
+pi install git:github.com/namasme/just-my-pi
 ```
+
+This tracks the default branch; `pi update --extensions` pulls the latest. Pin a tag
+(e.g. `git:github.com/namasme/just-my-pi@v0.4.0`) when you want a fixed version.
 
 Or reference it from `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "packages": ["git:github.com/namasme/just-my-pi@v0.4.0"]
+  "packages": ["git:github.com/namasme/just-my-pi"]
 }
 ```
 
@@ -35,7 +38,7 @@ Load only part of the package with settings-level filtering. For example, on Lin
 {
   "packages": [
     {
-      "source": "git:github.com/namasme/just-my-pi@v0.4.0",
+      "source": "git:github.com/namasme/just-my-pi",
       "skills": []
     }
   ]
