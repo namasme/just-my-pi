@@ -17,7 +17,8 @@
       "./extensions/report/index.ts"
     ],
     "skills": [
-      "./extensions/cow-worktree/skills"
+      "./extensions/cow-worktree/skills",
+      "./extensions/find-session/skills"
     ]
   }
 }
