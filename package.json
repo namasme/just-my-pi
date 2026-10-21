@@ -14,7 +14,8 @@
   "pi": {
     "extensions": [
       "./extensions/report/index.ts",
-      "./extensions/heartbeat/index.ts"
+      "./extensions/heartbeat/index.ts",
+      "./extensions/delegation/index.ts"
     ],
     "skills": [
       "./extensions/cow-worktree/skills",
