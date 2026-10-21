@@ -13,7 +13,6 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions/require-bash-timeout/index.ts",
       "./extensions/report/index.ts",
       "./extensions/heartbeat/index.ts"
     ],
