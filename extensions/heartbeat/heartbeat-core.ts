@@ -71,15 +71,15 @@ export function decideHeartbeatNudge(input: HeartbeatDecisionInput): string | un
 
   if (state.lastNudgeAt !== null && now - state.lastNudgeAt < thresholdMs) return undefined;
 
-  const minutes = Math.max(1, Math.round(elapsedSinceSignal / 60_000));
+  const minutes = Math.max(1, Math.floor(elapsedSinceSignal / 60_000));
   return buildHeartbeatHint(minutes);
 }
 
 export function buildHeartbeatHint(minutes: number): string {
   const unit = minutes === 1 ? "minute" : "minutes";
   return (
-    `You have not updated the user in ${minutes} ${unit}. Before your next tool call, send one short line: ` +
-    "what you're doing, what (if anything) is blocking, and roughly how much is left. Then continue."
+    `It has been at least ${minutes} ${unit} since you updated the user. Before your next tool call, send one ` +
+    "short line: what you're doing, what (if anything) is blocking, and roughly how much is left. Then continue."
   );
 }
 

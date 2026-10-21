@@ -62,8 +62,24 @@ await test("decideHeartbeatNudge: at/over threshold with no prior nudge -> hint"
   const state = stateAt(now - THRESHOLD_MS);
   const hint = decideHeartbeatNudge({ now, thresholdMs: THRESHOLD_MS, isMainAgent: true, state });
   assert.equal(typeof hint, "string");
-  assert.match(hint!, /not updated the user in 10 minutes/);
+  assert.match(hint!, /at least 10 minutes since you updated the user/);
   assert.match(hint!, /Before your next tool call/);
+});
+
+await test("decideHeartbeatNudge: reported minutes are a floor, never rounded up", () => {
+  // 90s elapsed against a 60s threshold must report "1 minute" (floor), not "2 minutes" (round).
+  const shortThresholdMs = 60_000;
+  const now = 1_000_000;
+  const state = stateAt(now - 90_000);
+  const hint = decideHeartbeatNudge({ now, thresholdMs: shortThresholdMs, isMainAgent: true, state });
+  assert.match(hint!, /at least 1 minute\b/);
+  assert.doesNotMatch(hint!, /1 minutes\b/);
+
+  // Sub-minute elapsed (short threshold) must still floor to a minimum of 1, never 0.
+  const subMinuteState = stateAt(now - 1_400);
+  const subMinuteHint = decideHeartbeatNudge({ now, thresholdMs: 1_000, isMainAgent: true, state: subMinuteState });
+  assert.match(subMinuteHint!, /at least 1 minute\b/);
+  assert.doesNotMatch(subMinuteHint!, /1 minutes\b/);
 });
 
 await test("decideHeartbeatNudge: second call right after a nudge -> no nudge", () => {
@@ -176,10 +192,10 @@ await test("decideHeartbeatNudge: createHeartbeatState starts a clock with no pr
 
 // --- buildHeartbeatHint -----------------------------------------------------
 
-await test("buildHeartbeatHint: singular vs plural minutes", () => {
-  assert.match(buildHeartbeatHint(1), /\b1 minute\b(?! s)/);
+await test("buildHeartbeatHint: singular vs plural minutes, phrased as a floor", () => {
+  assert.match(buildHeartbeatHint(1), /at least 1 minute\b/);
   assert.doesNotMatch(buildHeartbeatHint(1), /1 minutes/);
-  assert.match(buildHeartbeatHint(15), /15 minutes\b/);
+  assert.match(buildHeartbeatHint(15), /at least 15 minutes\b/);
 });
 
 // --- hasUserFacingText -------------------------------------------------------

@@ -45,9 +45,12 @@ function resetClock(agentId: string, now: number): void {
 }
 
 export default function heartbeat(pi: ExtensionAPI) {
-  // A fresh user turn starts a fresh clock: the model hasn't had a chance to
-  // go silent yet.
-  pi.on("input", async (_event, ctx) => {
+  // A fresh user prompt (including steers and queued follow-up batches)
+  // starts a fresh clock: the model hasn't had a chance to go silent yet.
+  // Fires in print/ACP too, unlike `input`, and is a documented event in
+  // both pi and omp's event unions, so it stays a no-op under plain pi via
+  // `asMainAgent` alone (no `ctx.agent` there).
+  pi.on("before_agent_start", async (_event, ctx) => {
     const main = asMainAgent(ctx);
     if (!main) return;
     resetClock(main.id, Date.now());
@@ -83,5 +86,12 @@ export default function heartbeat(pi: ExtensionAPI) {
     state = recordNudgeIssued(state, now);
     statesByAgentId.set(main.id, state);
     return { additionalContext: hint };
+  });
+
+  // Drop this session's clock when it shuts down so the map doesn't grow
+  // unboundedly across many main sessions in a long-lived host process.
+  pi.on("session_shutdown", async (_event, ctx) => {
+    const main = asMainAgent(ctx);
+    if (main) statesByAgentId.delete(main.id);
   });
 }
