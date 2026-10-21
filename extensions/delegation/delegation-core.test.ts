@@ -13,6 +13,7 @@ import {
   isDisabledByEnv,
   isForcedByEnv,
   NO_NUDGE_QUALITY_THRESHOLD,
+  resolveNudgeDelivery,
   resolveTokensScale,
 } from "./delegation-core.ts";
 
@@ -330,6 +331,57 @@ await test("resolveTokensScale: defaults to 1, rejects non-positive/invalid over
   assert.equal(resolveTokensScale("-3"), 1);
   assert.equal(resolveTokensScale("not-a-number"), 1);
   assert.equal(resolveTokensScale("50"), 50);
+});
+
+// --- resolveNudgeDelivery -----------------------------------------------------
+
+await test("resolveNudgeDelivery: a win blocked by the per-batch latch is deferred, then delivered next batch", () => {
+  const win = { tokens: 70_000, q: 0.65 };
+  const blocked = resolveNudgeDelivery({ sampled: win, pending: undefined, deliveredThisBatch: true });
+  assert.equal(blocked.deliver, undefined);
+  assert.deepEqual(blocked.pending, win);
+
+  // Later tool_results re-observe an already-evaluated bucket (no new sample);
+  // the pending win must survive them, not be dropped or re-rolled.
+  const stillBlocked = resolveNudgeDelivery({ sampled: undefined, pending: blocked.pending, deliveredThisBatch: true });
+  assert.deepEqual(stillBlocked.pending, win);
+
+  const nextBatch = resolveNudgeDelivery({ sampled: undefined, pending: stillBlocked.pending, deliveredThisBatch: false });
+  assert.deepEqual(nextBatch.deliver, win);
+  assert.equal(nextBatch.pending, undefined);
+});
+
+await test("resolveNudgeDelivery: a newer win supersedes an older pending one", () => {
+  const older = { tokens: 70_000, q: 0.65 };
+  const newer = { tokens: 140_000, q: 0.6 };
+  assert.deepEqual(resolveNudgeDelivery({ sampled: newer, pending: older, deliveredThisBatch: false }).deliver, newer);
+});
+
+await test("deferred delivery keeps the per-bucket nudge rate at p (latch must not re-roll suppressed wins)", () => {
+  // One batch: a nudge already landed at 40k, then three tool_results inside the
+  // 64k-128k bucket (glm-5-3, q=0.65 -> p=0.35); next batch observes 72k.
+  const model = "ai-gw-logical/glm-5-3";
+  let seed = 42;
+  const rng = () => ((seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31) / 2 ** 31);
+  const runs = 20_000;
+  let nudged = 0;
+  for (let i = 0; i < runs; i++) {
+    let state = decideDelegationNudge({ tokens: 40_000, modelId: model, contextWindow: 1_048_576, state: createDelegationState(), rng: rngAt(0), force: false }).state;
+    let pending: { tokens: number; q: number } | undefined;
+    let delivered = true;
+    const step = (tokens: number) => {
+      const d = decideDelegationNudge({ tokens, modelId: model, contextWindow: 1_048_576, state, rng, force: false });
+      state = d.state;
+      const out = resolveNudgeDelivery({ sampled: d.nudge, pending, deliveredThisBatch: delivered });
+      pending = out.pending;
+      if (out.deliver) { delivered = true; if (out.deliver.tokens >= 64_000) nudged++; }
+    };
+    for (const t of [66_000, 68_000, 70_000]) step(t);
+    delivered = false;
+    step(72_000);
+  }
+  const rate = nudged / runs;
+  assert.ok(Math.abs(rate - 0.35) < 0.02, `expected ≈0.35, got ${rate.toFixed(3)}`);
 });
 
 // --- buildDelegationHint ------------------------------------------------------

@@ -105,6 +105,26 @@ export function decideDelegationNudge(input: DelegationDecisionInput): Delegatio
   return { state: nextState, nudge: { tokens, q } };
 }
 
+export type DelegationNudge = NonNullable<DelegationDecision["nudge"]>;
+
+/**
+ * At most one nudge is delivered per tool batch. A sample that wins while the
+ * batch already delivered one is deferred (never discarded and re-rolled:
+ * re-rolling a suppressed win until one roll loses would cut the effective
+ * per-bucket probability from p to p^k). The newest winner supersedes an older
+ * pending one, since it reflects the larger context.
+ */
+export function resolveNudgeDelivery(input: {
+  sampled: DelegationNudge | undefined;
+  pending: DelegationNudge | undefined;
+  deliveredThisBatch: boolean;
+}): { deliver?: DelegationNudge; pending?: DelegationNudge } {
+  const candidate = input.sampled ?? input.pending;
+  if (!candidate) return {};
+  if (input.deliveredThisBatch) return { pending: candidate };
+  return { deliver: candidate };
+}
+
 /** `JUST_MY_PI_DELEGATION_DISABLE=1` turns the extension off entirely. */
 export function isDisabledByEnv(envValue: string | undefined): boolean {
   return envValue === "1";

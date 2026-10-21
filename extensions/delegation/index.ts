@@ -5,7 +5,9 @@ import {
   decideDelegationNudge,
   isDisabledByEnv,
   isForcedByEnv,
+  resolveNudgeDelivery,
   resolveTokensScale,
+  type DelegationNudge,
   type DelegationState,
 } from "./delegation-core.ts";
 
@@ -32,6 +34,10 @@ const lastUsageTokensByAgentId = new Map<string, number>();
 // cleared on each assistant_message (one per tool batch) so the next batch
 // can nudge again.
 const nudgedThisBatchByAgentId = new Set<string>();
+
+// A winning sample blocked by the latch is deferred here and delivered at the
+// next tool_result once the latch clears (see resolveNudgeDelivery).
+const pendingNudgeByAgentId = new Map<string, DelegationNudge>();
 
 interface MainAgentHandle {
   id: string;
@@ -103,12 +109,19 @@ export default function delegationNudge(pi: ExtensionAPI) {
       rng: Math.random,
       force: forced,
     });
-    if (decision.nudge && nudgedThisBatchByAgentId.has(main.id)) return;
     statesByAgentId.set(main.id, decision.state);
-    if (!decision.nudge) return;
+
+    const delivery = resolveNudgeDelivery({
+      sampled: decision.nudge,
+      pending: pendingNudgeByAgentId.get(main.id),
+      deliveredThisBatch: nudgedThisBatchByAgentId.has(main.id),
+    });
+    if (delivery.pending) pendingNudgeByAgentId.set(main.id, delivery.pending);
+    else pendingNudgeByAgentId.delete(main.id);
+    if (!delivery.deliver) return;
 
     nudgedThisBatchByAgentId.add(main.id);
-    return { additionalContext: buildDelegationHint(decision.nudge.tokens, modelId, decision.nudge.q) };
+    return { additionalContext: buildDelegationHint(delivery.deliver.tokens, modelId, delivery.deliver.q) };
   });
 
   // Drop this session's watermark/usage when it shuts down so the maps
@@ -120,5 +133,6 @@ export default function delegationNudge(pi: ExtensionAPI) {
     statesByAgentId.delete(main.id);
     lastUsageTokensByAgentId.delete(main.id);
     nudgedThisBatchByAgentId.delete(main.id);
+    pendingNudgeByAgentId.delete(main.id);
   });
 }
