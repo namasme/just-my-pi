@@ -335,26 +335,48 @@ await test("resolveTokensScale: defaults to 1, rejects non-positive/invalid over
 
 // --- resolveNudgeDelivery -----------------------------------------------------
 
+const GLM = "ai-gw-logical/glm-5-3";
+const live = { contextReset: false, modelId: GLM };
+
 await test("resolveNudgeDelivery: a win blocked by the per-batch latch is deferred, then delivered next batch", () => {
-  const win = { tokens: 70_000, q: 0.65 };
-  const blocked = resolveNudgeDelivery({ sampled: win, pending: undefined, deliveredThisBatch: true });
+  const win = { tokens: 70_000, q: 0.65, modelId: GLM };
+  const blocked = resolveNudgeDelivery({ ...live, sampled: win, pending: undefined, deliveredThisBatch: true });
   assert.equal(blocked.deliver, undefined);
   assert.deepEqual(blocked.pending, win);
 
   // Later tool_results re-observe an already-evaluated bucket (no new sample);
   // the pending win must survive them, not be dropped or re-rolled.
-  const stillBlocked = resolveNudgeDelivery({ sampled: undefined, pending: blocked.pending, deliveredThisBatch: true });
+  const stillBlocked = resolveNudgeDelivery({ ...live, sampled: undefined, pending: blocked.pending, deliveredThisBatch: true });
   assert.deepEqual(stillBlocked.pending, win);
 
-  const nextBatch = resolveNudgeDelivery({ sampled: undefined, pending: stillBlocked.pending, deliveredThisBatch: false });
+  const nextBatch = resolveNudgeDelivery({ ...live, sampled: undefined, pending: stillBlocked.pending, deliveredThisBatch: false });
   assert.deepEqual(nextBatch.deliver, win);
   assert.equal(nextBatch.pending, undefined);
 });
 
 await test("resolveNudgeDelivery: a newer win supersedes an older pending one", () => {
-  const older = { tokens: 70_000, q: 0.65 };
-  const newer = { tokens: 140_000, q: 0.6 };
-  assert.deepEqual(resolveNudgeDelivery({ sampled: newer, pending: older, deliveredThisBatch: false }).deliver, newer);
+  const older = { tokens: 70_000, q: 0.65, modelId: GLM };
+  const newer = { tokens: 140_000, q: 0.6, modelId: GLM };
+  assert.deepEqual(resolveNudgeDelivery({ ...live, sampled: newer, pending: older, deliveredThisBatch: false }).deliver, newer);
+});
+
+await test("resolveNudgeDelivery: a pending nudge is dropped after compaction, never delivered with pre-compaction numbers", () => {
+  const stale = { tokens: 300_000, q: 0.4, modelId: GLM };
+  const out = resolveNudgeDelivery({ sampled: undefined, pending: stale, deliveredThisBatch: false, contextReset: true, modelId: GLM });
+  assert.deepEqual(out, {});
+});
+
+await test("resolveNudgeDelivery: a pending nudge is dropped when the model changed since it was sampled", () => {
+  const stale = { tokens: 70_000, q: 0.65, modelId: GLM };
+  const out = resolveNudgeDelivery({ sampled: undefined, pending: stale, deliveredThisBatch: false, contextReset: false, modelId: "ai-gw-anthropic-1m/anthropic/claude-opus-5-5" });
+  assert.deepEqual(out, {});
+});
+
+await test("decideDelegationNudge: a token drop signals contextReset; growth does not", () => {
+  const grown = decideDelegationNudge({ tokens: 300_000, modelId: GLM, contextWindow: 1_048_576, state: createDelegationState(), rng: rngAt(0.99), force: false });
+  assert.equal(grown.contextReset, undefined);
+  const dropped = decideDelegationNudge({ tokens: 30_000, modelId: GLM, contextWindow: 1_048_576, state: grown.state, rng: rngAt(0.99), force: false });
+  assert.equal(dropped.contextReset, true);
 });
 
 await test("deferred delivery keeps the per-bucket nudge rate at p (latch must not re-roll suppressed wins)", () => {
@@ -367,12 +389,12 @@ await test("deferred delivery keeps the per-bucket nudge rate at p (latch must n
   let nudged = 0;
   for (let i = 0; i < runs; i++) {
     let state = decideDelegationNudge({ tokens: 40_000, modelId: model, contextWindow: 1_048_576, state: createDelegationState(), rng: rngAt(0), force: false }).state;
-    let pending: { tokens: number; q: number } | undefined;
+    let pending: { tokens: number; q: number; modelId: string } | undefined;
     let delivered = true;
     const step = (tokens: number) => {
       const d = decideDelegationNudge({ tokens, modelId: model, contextWindow: 1_048_576, state, rng, force: false });
       state = d.state;
-      const out = resolveNudgeDelivery({ sampled: d.nudge, pending, deliveredThisBatch: delivered });
+      const out = resolveNudgeDelivery({ ...live, sampled: d.nudge, pending, deliveredThisBatch: delivered, contextReset: d.contextReset === true });
       pending = out.pending;
       if (out.deliver) { delivered = true; if (out.deliver.tokens >= 64_000) nudged++; }
     };

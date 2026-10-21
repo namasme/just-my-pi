@@ -115,13 +115,15 @@ export default function delegationNudge(pi: ExtensionAPI) {
       sampled: decision.nudge,
       pending: pendingNudgeByAgentId.get(main.id),
       deliveredThisBatch: nudgedThisBatchByAgentId.has(main.id),
+      contextReset: decision.contextReset === true,
+      modelId,
     });
     if (delivery.pending) pendingNudgeByAgentId.set(main.id, delivery.pending);
     else pendingNudgeByAgentId.delete(main.id);
     if (!delivery.deliver) return;
 
     nudgedThisBatchByAgentId.add(main.id);
-    return { additionalContext: buildDelegationHint(delivery.deliver.tokens, modelId, delivery.deliver.q) };
+    return { additionalContext: buildDelegationHint(delivery.deliver.tokens, delivery.deliver.modelId, delivery.deliver.q) };
   });
 
   // Drop this session's watermark/usage when it shuts down so the maps

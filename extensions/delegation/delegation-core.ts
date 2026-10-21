@@ -52,8 +52,10 @@ export interface DelegationDecisionInput {
 export interface DelegationDecision {
   /** Updated watermark; callers must persist this even when no nudge fires. */
   state: DelegationState;
-  /** Present only on a positive sample. */
-  nudge?: { tokens: number; q: number };
+  /** Present only on a positive sample; records the model the sample was taken for. */
+  nudge?: { tokens: number; q: number; modelId: string };
+  /** Set when observed tokens dropped (compaction): any pending nudge is stale. */
+  contextReset?: true;
 }
 
 /**
@@ -83,7 +85,7 @@ export function decideDelegationNudge(input: DelegationDecisionInput): Delegatio
   const droppedTokens = state.lastTokens !== null && tokens < state.lastTokens;
 
   if (droppedTokens) {
-    return { state: { watermarkLowerBound: bucket.lowerBound, lastTokens: tokens } };
+    return { state: { watermarkLowerBound: bucket.lowerBound, lastTokens: tokens }, contextReset: true };
   }
   if (watermark !== null && bucket.lowerBound <= watermark) {
     // Already evaluated this bucket, or a model switch landed on a
@@ -102,7 +104,7 @@ export function decideDelegationNudge(input: DelegationDecisionInput): Delegatio
   const p = q >= NO_NUDGE_QUALITY_THRESHOLD ? 0 : clamp01(1 - q);
   const sampled = force ? p > 0 : rng() < p;
   if (!sampled) return { state: nextState };
-  return { state: nextState, nudge: { tokens, q } };
+  return { state: nextState, nudge: { tokens, q, modelId } };
 }
 
 export type DelegationNudge = NonNullable<DelegationDecision["nudge"]>;
@@ -112,14 +114,20 @@ export type DelegationNudge = NonNullable<DelegationDecision["nudge"]>;
  * batch already delivered one is deferred (never discarded and re-rolled:
  * re-rolling a suppressed win until one roll loses would cut the effective
  * per-bucket probability from p to p^k). The newest winner supersedes an older
- * pending one, since it reflects the larger context.
+ * pending one, since it reflects the larger context. A pending nudge is
+ * dropped once it no longer describes the context: after a token drop
+ * (compaction) or when the current model differs from the one it was sampled
+ * for (its q and the hint's model name would both be wrong).
  */
 export function resolveNudgeDelivery(input: {
   sampled: DelegationNudge | undefined;
   pending: DelegationNudge | undefined;
   deliveredThisBatch: boolean;
+  contextReset: boolean;
+  modelId: string;
 }): { deliver?: DelegationNudge; pending?: DelegationNudge } {
-  const candidate = input.sampled ?? input.pending;
+  const pending = input.contextReset || input.pending?.modelId !== input.modelId ? undefined : input.pending;
+  const candidate = input.sampled ?? pending;
   if (!candidate) return {};
   if (input.deliveredThisBatch) return { pending: candidate };
   return { deliver: candidate };
