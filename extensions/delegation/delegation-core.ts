@@ -1,7 +1,14 @@
 // Pure decision logic for the delegation-nudge extension. No pi/omp imports here so
 // this file can be unit tested in isolation (see delegation-core.test.ts).
 
-import { bucketForTokens, curveForModel } from "./curves.ts";
+import {
+  bucketForTokens,
+  curveForModel,
+  DEFAULT_CONTEXT_WINDOW,
+  fallbackQuality,
+  MEASURED_CURVE_CEILING,
+  resolveModelCurve,
+} from "./curves.ts";
 
 /** A bucket's quality at/above which this extension never nudges (avoids noise at small contexts). */
 export const NO_NUDGE_QUALITY_THRESHOLD = 0.95;
@@ -9,13 +16,17 @@ export const NO_NUDGE_QUALITY_THRESHOLD = 0.95;
 /**
  * Per-main-session watermark: the lower bound (tokens) of the highest bucket
  * already sampled this session, or `null` before the first observation.
+ * `lastTokens` is the last observed absolute token count, or `null` before
+ * the first observation; it decides a genuine drop (compaction) independent
+ * of which curve's bucket grid is in effect.
  */
 export interface DelegationState {
   watermarkLowerBound: number | null;
+  lastTokens: number | null;
 }
 
 export function createDelegationState(): DelegationState {
-  return { watermarkLowerBound: null };
+  return { watermarkLowerBound: null, lastTokens: null };
 }
 
 function clamp01(value: number): number {
@@ -52,30 +63,46 @@ export interface DelegationDecision {
  * Buckets are the current model's curve's token ranges (see curves.ts). A
  * newly entered bucket -- strictly higher than the highest bucket evaluated
  * so far this session -- is sampled exactly once: never again while context
- * stays in that bucket. A drop below the lowest bound of the highest
- * evaluated bucket (compaction, a context reset) resets the watermark to the
- * bucket the drop landed in, without sampling, so re-growth through that
- * range is evaluated again. A model switch mid-session evaluates the new
- * model's curve against the same watermark; it is never reset by a switch.
+ * stays in that bucket. In the bucket past the measured ceiling, a known
+ * model's quality is evaluated at the actual observed token count (not
+ * pinned to the ceiling), since that bucket spans a wide, window-dependent
+ * range.
+ *
+ * A genuine drop in observed tokens (compaction, a context reset) resets
+ * the watermark to the bucket the drop landed in, without sampling, so
+ * re-growth through that range is evaluated again. A model switch
+ * mid-session evaluates the new model's curve against the same watermark
+ * and is never mistaken for a drop merely because the new curve's bucket
+ * grid lands on a lower lowerBound at the same (or a higher) token count.
  */
 export function decideDelegationNudge(input: DelegationDecisionInput): DelegationDecision {
   const { tokens, modelId, contextWindow, state, rng, force } = input;
   const curve = curveForModel(modelId, contextWindow);
   const bucket = bucketForTokens(curve, tokens);
   const watermark = state.watermarkLowerBound;
+  const droppedTokens = state.lastTokens !== null && tokens < state.lastTokens;
 
-  if (watermark !== null && bucket.lowerBound < watermark) {
-    return { state: { watermarkLowerBound: bucket.lowerBound } };
+  if (droppedTokens) {
+    return { state: { watermarkLowerBound: bucket.lowerBound, lastTokens: tokens } };
   }
-  if (watermark !== null && bucket.lowerBound === watermark) {
-    return { state };
+  if (watermark !== null && bucket.lowerBound <= watermark) {
+    // Already evaluated this bucket, or a model switch landed on a
+    // lower-bound bucket under a different curve grid without tokens
+    // actually decreasing: keep the watermark as-is rather than resetting it.
+    return { state: { watermarkLowerBound: watermark, lastTokens: tokens } };
   }
 
-  const nextState: DelegationState = { watermarkLowerBound: bucket.lowerBound };
-  const p = bucket.q >= NO_NUDGE_QUALITY_THRESHOLD ? 0 : clamp01(1 - bucket.q);
+  const window = contextWindow !== undefined && contextWindow > 0 ? contextWindow : DEFAULT_CONTEXT_WINDOW;
+  const q =
+    bucket.lowerBound >= MEASURED_CURVE_CEILING && resolveModelCurve(modelId) !== undefined
+      ? fallbackQuality(tokens, window)
+      : bucket.q;
+
+  const nextState: DelegationState = { watermarkLowerBound: bucket.lowerBound, lastTokens: tokens };
+  const p = q >= NO_NUDGE_QUALITY_THRESHOLD ? 0 : clamp01(1 - q);
   const sampled = force ? p > 0 : rng() < p;
   if (!sampled) return { state: nextState };
-  return { state: nextState, nudge: { tokens, q: bucket.q } };
+  return { state: nextState, nudge: { tokens, q } };
 }
 
 /** `JUST_MY_PI_DELEGATION_DISABLE=1` turns the extension off entirely. */

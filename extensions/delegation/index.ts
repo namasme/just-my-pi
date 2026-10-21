@@ -24,9 +24,14 @@ const statesByAgentId = new Map<string, DelegationState>();
 
 // Fallback signal for when ctx.getContextUsage() is unavailable (plain pi)
 // or reports no tokens yet (right after compaction, before the next LLM
-// response): the last assistant message's own usage (input + cacheRead +
-// cacheWrite), tracked per main-agent id.
+// response): the last assistant message's own usage.
 const lastUsageTokensByAgentId = new Map<string, number>();
+
+// A tool batch can span several tool_result events as context keeps growing
+// within it; this latch caps delivery to at most one nudge per batch. It is
+// cleared on each assistant_message (one per tool batch) so the next batch
+// can nudge again.
+const nudgedThisBatchByAgentId = new Set<string>();
 
 interface MainAgentHandle {
   id: string;
@@ -61,9 +66,10 @@ export default function delegationNudge(pi: ExtensionAPI) {
   pi.on("assistant_message", async (event, ctx) => {
     const main = asMainAgent(ctx);
     if (!main) return;
+    nudgedThisBatchByAgentId.delete(main.id);
     const usage = event.message.usage;
     if (!usage) return;
-    lastUsageTokensByAgentId.set(main.id, usage.input + usage.cacheRead + usage.cacheWrite);
+    lastUsageTokensByAgentId.set(main.id, usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite);
   });
 
   // On every tool result in the main session, check whether context has
@@ -97,9 +103,11 @@ export default function delegationNudge(pi: ExtensionAPI) {
       rng: Math.random,
       force: forced,
     });
+    if (decision.nudge && nudgedThisBatchByAgentId.has(main.id)) return;
     statesByAgentId.set(main.id, decision.state);
     if (!decision.nudge) return;
 
+    nudgedThisBatchByAgentId.add(main.id);
     return { additionalContext: buildDelegationHint(decision.nudge.tokens, modelId, decision.nudge.q) };
   });
 
@@ -111,5 +119,6 @@ export default function delegationNudge(pi: ExtensionAPI) {
     if (!main) return;
     statesByAgentId.delete(main.id);
     lastUsageTokensByAgentId.delete(main.id);
+    nudgedThisBatchByAgentId.delete(main.id);
   });
 }

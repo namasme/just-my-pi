@@ -219,6 +219,35 @@ await test("decideDelegationNudge: a drop below the evaluated bucket resets the 
   assert.ok(regrown.nudge, "re-entering a previously evaluated bucket after a drop must sample again");
 });
 
+// --- decideDelegationNudge: beyond-ceiling q is evaluated at observed tokens ---
+
+await test("decideDelegationNudge: past the measured ceiling, q is evaluated at the observed tokens, not pinned to the ceiling", () => {
+  const grown = decideDelegationNudge({
+    tokens: 300_000, // glm-5-3: 256k-512k bucket, q=0.40 -> watermark 256_000
+    modelId: "glm-5-3",
+    contextWindow: 1_048_576,
+    state: createDelegationState(),
+    rng: rngAt(0.99), // avoid nudging so the watermark change is isolated
+    force: false,
+  });
+  assert.equal(grown.state.watermarkLowerBound, 256_000);
+
+  // Jumps straight past the 512k ceiling to 600k tokens (57% of a
+  // 1,048,576-token window): the fallback curve's 50-100% bucket (q=0.30,
+  // p=0.70) applies here. A q pinned at the 512_000 ceiling value would
+  // instead give 48.8% of window -> the 25-50% bucket (q=0.40, p=0.60).
+  const pastCeiling = decideDelegationNudge({
+    tokens: 600_000,
+    modelId: "glm-5-3",
+    contextWindow: 1_048_576,
+    state: grown.state,
+    rng: rngAt(0.65), // between p=0.60 and p=0.70: only the correct q nudges
+    force: false,
+  });
+  assert.ok(pastCeiling.nudge, "q must be evaluated at the observed 600k tokens (0.30), not pinned at the 512k ceiling (0.40)");
+  assert.equal(pastCeiling.nudge!.q, 0.3);
+});
+
 // --- decideDelegationNudge: model switch keeps the watermark -----------------
 
 await test("decideDelegationNudge: a model switch mid-session evaluates the new curve without resetting the watermark", () => {
@@ -255,6 +284,33 @@ await test("decideDelegationNudge: a model switch mid-session evaluates the new 
   });
   assert.ok(grownNewModel.nudge);
   assert.equal(grownNewModel.nudge!.q, 0.55, "scored with the new model's curve, not the old one's");
+});
+
+await test("decideDelegationNudge: a model switch to a different curve grid is not mistaken for a token drop", () => {
+  const grown = decideDelegationNudge({
+    tokens: 90_000, // glm-5-3: 64k-128k bucket -> watermark 64_000
+    modelId: "glm-5-3",
+    contextWindow: 1_048_576,
+    state: createDelegationState(),
+    rng: rngAt(0.99),
+    force: false,
+  });
+  assert.equal(grown.state.watermarkLowerBound, 64_000);
+
+  // Same tokens (not decreased), switched to an unrecognized model with a
+  // 200k window: its fallback grid's bucket for 90k tokens (45% of window)
+  // has a lower lowerBound (50_000) than the watermark, but tokens never
+  // decreased -- this must not be read as a drop.
+  const switched = decideDelegationNudge({
+    tokens: 90_000,
+    modelId: "totally-unknown-model",
+    contextWindow: 200_000,
+    state: grown.state,
+    rng: rngAt(0.0), // would nudge if resampled
+    force: false,
+  });
+  assert.equal(switched.nudge, undefined);
+  assert.equal(switched.state.watermarkLowerBound, 64_000, "watermark must not reset on a grid mismatch alone");
 });
 
 // --- env helpers --------------------------------------------------------------
