@@ -21,7 +21,7 @@ Or reference it from `~/.pi/agent/settings.json`:
 }
 ```
 
-For omp, run `omp plugin install https://github.com/namasme/just-my-pi`; after a release, `omp plugin upgrade just-my-pi` fetches the new version. To test a local checkout before pushing it, use `omp plugin link /absolute/path/to/just-my-pi`.
+For omp, install from GitHub with `omp plugin install https://github.com/namasme/just-my-pi`. To refresh an existing GitHub-sourced install, run `bun update just-my-pi --force --no-cache` from `~/.omp/plugins`, then `omp plugin install https://github.com/namasme/just-my-pi --force` to sync omp's version record. `omp plugin upgrade just-my-pi` currently sees the cached GitHub commit as up to date. To test a local checkout before pushing it, use `omp plugin link /absolute/path/to/just-my-pi`.
 
 ## Contents
 
