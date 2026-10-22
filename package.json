@@ -1,7 +1,7 @@
 {
   "name": "just-my-pi",
-  "version": "0.4.0",
-  "description": "Personal pi configuration: pi extensions and skills.",
+  "version": "0.5.0",
+  "description": "Personal pi/omp configuration: extensions and skills.",
   "license": "MIT",
   "author": "Nacho Mas <ignaciomasmesa@gmail.com>",
   "repository": {
@@ -19,7 +19,8 @@
     ],
     "skills": [
       "./extensions/cow-worktree/skills",
-      "./extensions/find-session/skills"
+      "./extensions/find-session/skills",
+      "./extensions/schedule/skills"
     ]
   }
 }

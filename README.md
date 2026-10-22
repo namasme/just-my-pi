@@ -1,6 +1,6 @@
 # just-my-pi
 
-Personal [pi](https://pi.dev) package: extensions and skills.
+Personal [pi](https://pi.dev) and omp package: extensions and skills.
 
 ## Install
 
@@ -11,7 +11,7 @@ pi install git:github.com/namasme/just-my-pi
 ```
 
 This tracks the default branch; `pi update --extensions` pulls the latest. Pin a tag
-(e.g. `git:github.com/namasme/just-my-pi@v0.4.0`) when you want a fixed version.
+(e.g. `git:github.com/namasme/just-my-pi@v0.5.0`) when you want a fixed version.
 
 Or reference it from `~/.pi/agent/settings.json`:
 
@@ -20,6 +20,8 @@ Or reference it from `~/.pi/agent/settings.json`:
   "packages": ["git:github.com/namasme/just-my-pi"]
 }
 ```
+
+For omp, run `omp plugin install https://github.com/namasme/just-my-pi`; after a release, `omp plugin upgrade just-my-pi` fetches the new version. To test a local checkout before pushing it, use `omp plugin link /absolute/path/to/just-my-pi`.
 
 ## Contents
 
@@ -30,6 +32,7 @@ Or reference it from `~/.pi/agent/settings.json`:
 | `delegation` | extension | On the main session, nudges the model to delegate to a subagent as context fills, with a nudge probability set by how well the *current* model holds up at the *current* context size (a step curve over token ranges, not a single threshold; falls back to a generic fraction-of-context-window curve for unrecognized models). Disable with `JUST_MY_PI_DELEGATION_DISABLE=1`; force every eligible bucket to nudge (for smoke tests) with `JUST_MY_PI_DELEGATION_FORCE=1` |
 | `cow-worktree` | skill | Creates APFS copy-on-write git worktrees, making branches of very large repositories cheap in time and disk. **macOS only** |
 | `find-session` | skill | Hunt down a half-remembered pi/omp session by quoted fragments, topic, working-directory path, or timeframe. Scans both session stores (`~/.pi`, `~/.omp`), ranks candidates by how many clues they match, and returns the evidence trail — adjacent finds even on a miss. Requires `jq`; uses `rg` when present, falls back to `grep` |
+| `schedule` | skill | Launchd-backed one-off, recurring, and conditional jobs with macOS notifications, retry state, cleanup, and automatic restoration. Use `/schedule` in pi or `/skill:schedule` in omp. macOS only; see [the skill](extensions/schedule/skills/schedule/SKILL.md) |
 
 ## Selective loading
 
@@ -54,6 +57,15 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
 Tests only ever operate inside their own lab directory; `tests/helpers.py` resolves every path with `realpath()` and refuses anything outside it.
+
+## schedule tests
+
+```bash
+cd extensions/schedule/skills/schedule
+/usr/bin/python3 -m unittest -v test_schedule.py
+```
+
+These tests create isolated temporary LaunchAgents; they require a logged-in macOS GUI session and unload every test agent afterward.
 
 ## License
 
