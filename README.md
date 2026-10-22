@@ -23,6 +23,16 @@ Or reference it from `~/.pi/agent/settings.json`:
 
 For omp, install from GitHub with `omp plugin install https://github.com/namasme/just-my-pi`. To refresh an existing GitHub-sourced install, run `bun update just-my-pi --force --no-cache` from `~/.omp/plugins`, then `omp plugin install https://github.com/namasme/just-my-pi --force` to sync omp's version record. `omp plugin upgrade just-my-pi` currently sees the cached GitHub commit as up to date. To test a local checkout before pushing it, use `omp plugin link /absolute/path/to/just-my-pi`.
 
+Omp reports the package's `pi.skills` in `omp plugin list`, but its skill loader scans directories separately. To enable `/skill:schedule` without a symlink, add the **installed package** directory containing `schedule/` to `skills.customDirectories` in `~/.omp/agent/config.yml`:
+
+```yaml
+skills:
+  customDirectories:
+    - /absolute/home/path/.omp/plugins/node_modules/just-my-pi/extensions/schedule/skills
+```
+
+Keep any existing entries. `omp skill list` should then include `schedule`.
+
 ## Contents
 
 | Resource | Type | Notes |
