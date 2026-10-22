@@ -7,6 +7,19 @@ import {
   resolveThresholdSeconds,
   type HeartbeatState,
 } from "./heartbeat-core.ts";
+import {
+  computeWidgetLines,
+  createStatusState,
+  endLoop,
+  extractUserFacingText,
+  recordAssistantText,
+  recordToolResult,
+  resetTurn,
+  resolveStatusDelaySeconds,
+  resolveWidgetWidth,
+  startLoop,
+  type StatusState,
+} from "./status-core.ts";
 
 const thresholdMs = resolveThresholdSeconds(process.env.JUST_MY_PI_HEARTBEAT_SECONDS) * 1000;
 
@@ -15,6 +28,58 @@ const thresholdMs = resolveThresholdSeconds(process.env.JUST_MY_PI_HEARTBEAT_SEC
 // clock. See "child sessions reuse imported factories ... module-level
 // variables remain shared" in the extension-authoring guide.
 const statesByAgentId = new Map<string, HeartbeatState>();
+
+// --- Pinned status widget ("Latest from agent") -----------------------------
+//
+// Pins the main agent's most recent user-facing text above the editor once a
+// turn runs long, so it stays visible without scrolling back through a deep
+// tool-call chain. All decision/formatting logic lives in status-core.ts;
+// this section only wires it to lifecycle events and `ctx.ui.setWidget`.
+
+const STATUS_WIDGET_KEY = "just-my-pi-status";
+const STATUS_REFRESH_INTERVAL_MS = 15_000;
+const statusDisabled = process.env.JUST_MY_PI_STATUS_DISABLE === "1";
+const statusDelayMs = resolveStatusDelaySeconds(process.env.JUST_MY_PI_STATUS_DELAY_SECONDS) * 1000;
+
+// Keyed by main-agent id, same rationale as statesByAgentId above.
+const statusStatesByAgentId = new Map<string, StatusState>();
+// The handle returned by ctx.setInterval for each main session's 15s refresh
+// tick, so it can be cleared on agent_end/session_shutdown.
+const statusTimersByAgentId = new Map<string, unknown>();
+
+/**
+ * Structural shape we need from `ctx` for the widget. omp documents `ui`,
+ * `hasUI`, `setInterval`, and `clearTimer` on its `ExtensionContext`, but the
+ * plain-pi package this extension also compiles against doesn't declare
+ * them — narrowed to exactly what's used and made optional, same approach as
+ * `AgentFieldCarrier` below, so a plain-pi ctx (missing all of these) is
+ * still structurally assignable and the widget calls simply no-op.
+ */
+interface WidgetContextCarrier {
+  hasUI?: boolean;
+  ui?: {
+    setWidget?: (
+      key: string,
+      content: string[] | undefined,
+      options?: { placement?: "aboveEditor" | "belowEditor" },
+    ) => void;
+  };
+  setInterval?: (fn: () => void, ms: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
+}
+
+/** Recomputes and pushes the widget's current content (or hides it) for one main session. */
+function renderStatusWidget(agentId: string, ctx: WidgetContextCarrier): void {
+  if (!ctx.hasUI) return; // print mode / --no-ui: no-op
+  const state = statusStatesByAgentId.get(agentId);
+  const lines = state
+    ? computeWidgetLines(state, Date.now(), {
+        delayMs: statusDelayMs,
+        width: resolveWidgetWidth(process.stdout.columns),
+      })
+    : undefined;
+  ctx.ui?.setWidget?.(STATUS_WIDGET_KEY, lines, { placement: "aboveEditor" });
+}
 
 interface MainAgentHandle {
   id: string;
@@ -88,10 +153,90 @@ export default function heartbeat(pi: ExtensionAPI) {
     return { additionalContext: hint };
   });
 
-  // Drop this session's clock when it shuts down so the map doesn't grow
-  // unboundedly across many main sessions in a long-lived host process.
+  if (!statusDisabled) {
+    // A fresh prompt or steer starts a new turn: clear any update shown for
+    // the previous one right away, so a steer mid-tool-call-storm doesn't
+    // leave stale text pinned.
+    pi.on("before_agent_start", async (_event, ctx) => {
+      const main = asMainAgent(ctx);
+      if (!main) return;
+      const now = Date.now();
+      statusStatesByAgentId.set(main.id, resetTurn(now, statusStatesByAgentId.get(main.id)));
+      renderStatusWidget(main.id, ctx);
+    });
+
+    // The agent loop started: the widget may appear once its delay elapses.
+    // (Re)start the 15s refresh tick so age/elapsed stay current during a
+    // single long tool call.
+    pi.on("agent_start", async (_event, ctx) => {
+      const main = asMainAgent(ctx);
+      if (!main) return;
+      const now = Date.now();
+      statusStatesByAgentId.set(main.id, startLoop(statusStatesByAgentId.get(main.id) ?? createStatusState(now)));
+
+      const existingTimer = statusTimersByAgentId.get(main.id);
+      if (existingTimer !== undefined) ctx.clearTimer?.(existingTimer);
+      const timer = ctx.setInterval?.(() => renderStatusWidget(main.id, ctx), STATUS_REFRESH_INTERVAL_MS);
+      if (timer !== undefined) statusTimersByAgentId.set(main.id, timer);
+
+      renderStatusWidget(main.id, ctx);
+    });
+
+    // Track the assistant's latest user-facing text this turn.
+    pi.on("assistant_message", async (event, ctx) => {
+      const main = asMainAgent(ctx);
+      if (!main) return;
+      const now = Date.now();
+      let state = statusStatesByAgentId.get(main.id) ?? createStatusState(now);
+      if (hasUserFacingText(event.message.content)) {
+        state = recordAssistantText(state, now, extractUserFacingText(event.message.content));
+      }
+      statusStatesByAgentId.set(main.id, state);
+      renderStatusWidget(main.id, ctx);
+    });
+
+    // Count tool calls since the last update, and refresh the widget so a
+    // storm of calls keeps the header's "ago"/"since" numbers current.
+    pi.on("tool_result", async (_event, ctx) => {
+      const main = asMainAgent(ctx);
+      if (!main) return;
+      const state = statusStatesByAgentId.get(main.id) ?? createStatusState(Date.now());
+      statusStatesByAgentId.set(main.id, recordToolResult(state));
+      renderStatusWidget(main.id, ctx);
+    });
+
+    // The agent loop ended: hide the widget (the final answer is then the
+    // last chat item) and stop the refresh tick.
+    pi.on("agent_end", async (_event, ctx) => {
+      const main = asMainAgent(ctx);
+      if (!main) return;
+      const state = statusStatesByAgentId.get(main.id);
+      if (state) statusStatesByAgentId.set(main.id, endLoop(state));
+
+      const timer = statusTimersByAgentId.get(main.id);
+      if (timer !== undefined) {
+        ctx.clearTimer?.(timer);
+        statusTimersByAgentId.delete(main.id);
+      }
+
+      renderStatusWidget(main.id, ctx);
+    });
+  }
+
+  // Drop this session's state when it shuts down so the maps don't grow
+  // unboundedly across many main sessions in a long-lived host process, and
+  // explicitly remove the widget (belt-and-suspenders alongside agent_end).
   pi.on("session_shutdown", async (_event, ctx) => {
     const main = asMainAgent(ctx);
-    if (main) statesByAgentId.delete(main.id);
+    if (!main) return;
+    statesByAgentId.delete(main.id);
+
+    if (!statusDisabled) {
+      const timer = statusTimersByAgentId.get(main.id);
+      if (timer !== undefined) ctx.clearTimer?.(timer);
+      statusTimersByAgentId.delete(main.id);
+      statusStatesByAgentId.delete(main.id);
+      ctx.ui?.setWidget?.(STATUS_WIDGET_KEY, undefined);
+    }
   });
 }
