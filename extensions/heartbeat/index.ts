@@ -236,7 +236,10 @@ export default function heartbeat(pi: ExtensionAPI) {
       if (timer !== undefined) ctx.clearTimer?.(timer);
       statusTimersByAgentId.delete(main.id);
       statusStatesByAgentId.delete(main.id);
-      ctx.ui?.setWidget?.(STATUS_WIDGET_KEY, undefined);
+      // State is already gone, so this resolves to `undefined` and removes
+      // the widget — routed through the same `hasUI` guard as every other
+      // render call instead of calling `ctx.ui.setWidget` directly.
+      renderStatusWidget(main.id, ctx);
     }
   });
 }

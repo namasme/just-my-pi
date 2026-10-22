@@ -29,6 +29,30 @@ async function test(name: string, fn: () => void | Promise<void>) {
   }
 }
 
+// Independent (deliberately not copy-pasted from status-core.ts) display-width
+// measure, used only to assert wrapText's output lines fit the requested
+// column budget for East-Asian-wide text.
+function measureDisplayWidth(text: string): number {
+  let width = 0;
+  for (const ch of text) {
+    const cp = ch.codePointAt(0) ?? 0;
+    const isWide =
+      (cp >= 0x1100 && cp <= 0x115f) ||
+      (cp >= 0x2e80 && cp <= 0xa4cf) ||
+      (cp >= 0xac00 && cp <= 0xd7a3) ||
+      (cp >= 0xf900 && cp <= 0xfaff) ||
+      (cp >= 0xff00 && cp <= 0xff60) ||
+      (cp >= 0xffe0 && cp <= 0xffe6) ||
+      (cp >= 0x1f300 && cp <= 0x1faff) ||
+      (cp >= 0x20000 && cp <= 0x3fffd);
+    width += isWide ? 2 : 1;
+  }
+  return width;
+}
+
+// Detects an unpaired UTF-16 surrogate (half of a split astral code point).
+const LONE_SURROGATE_PATTERN = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
 const DELAY_MS = 20_000;
 
 function stateAt(overrides: Partial<StatusState> = {}): StatusState {
@@ -155,6 +179,54 @@ await test("wrapText: a single overlong word that still doesn't fit in maxLines 
   assert.equal(lines.length, 2);
   for (const line of lines) assert.ok(line.length <= 10, `line "${line}" exceeds width 10`);
   assert.ok(lines[1].endsWith("…"));
+});
+
+// --- wrapText: display width (CJK/wide chars), grapheme safety, ANSI -----------
+
+await test("wrapText: CJK text wraps by display width, not UTF-16 length, at width 16", () => {
+  const text = "こんにちは世界、これは日本語のテストです。".repeat(2);
+  const lines = wrapText(text, 16, 20); // generous maxLines: nothing should be cut
+  assert.ok(lines.length > 1, "expected wide text to need more than one line at width 16");
+  for (const line of lines) {
+    assert.ok(measureDisplayWidth(line) <= 16, `line "${line}" measures ${measureDisplayWidth(line)} > 16 display columns`);
+  }
+  assert.equal(lines.join(""), text, "no characters lost across the hard break");
+});
+
+await test("wrapText: CJK text wraps by display width at width 96", () => {
+  const text = "あ".repeat(80); // 80 wide chars = 160 display columns
+  const lines = wrapText(text, 96, 20);
+  assert.ok(lines.length > 1, "160 display columns must need more than one line at width 96");
+  for (const line of lines) {
+    assert.ok(measureDisplayWidth(line) <= 96, `line "${line}" measures ${measureDisplayWidth(line)} > 96 display columns`);
+  }
+  assert.equal(lines.join(""), text);
+});
+
+await test("wrapText: hard-breaking an overlong word never splits an astral code point", () => {
+  const text = `x ${"𠮷".repeat(40)} y`; // 𠮷 (U+20B B7) is outside the BMP: a surrogate pair
+  const lines = wrapText(text, 5, 20); // generous maxLines: verify the break itself, not truncation
+  for (const line of lines) {
+    assert.ok(!LONE_SURROGATE_PATTERN.test(line), `line "${line}" contains an unpaired surrogate`);
+  }
+});
+
+await test("wrapText: a ZWJ emoji sequence stays whole across a hard break", () => {
+  const familyEmoji = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}"; // 👨‍👩‍👧‍👦, one grapheme cluster
+  const text = `${"a".repeat(10)}${familyEmoji}${"b".repeat(10)}`; // one long "word", no spaces
+  const lines = wrapText(text, 8, 20);
+  assert.equal(lines.join(""), text, "no characters lost/reordered across the hard break");
+  assert.ok(
+    lines.some((line) => line.includes(familyEmoji)),
+    "the ZWJ sequence must land intact on a single line, never split mid-cluster",
+  );
+});
+
+await test("wrapText: ANSI escape sequences are stripped before wrapping", () => {
+  const withAnsi = "\u001b[31mred text\u001b[0m and \u001b[1mbold\u001b[0m too";
+  const lines = wrapText(withAnsi, 40, 4);
+  assert.deepEqual(lines, ["red text and bold too"]);
+  for (const line of lines) assert.ok(!line.includes("\u001b"), `line "${line}" still contains a raw ANSI escape`);
 });
 
 // --- extractUserFacingText ------------------------------------------------------
